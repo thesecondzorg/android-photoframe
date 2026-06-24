@@ -27,6 +27,8 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
     private val tag = "PhotoServer"
     private val photosDir = context.getExternalFilesDir("photos") ?: File(context.filesDir, "photos")
     private val thumbnailsDir = context.getExternalFilesDir("thumbnails") ?: File(context.cacheDir, "thumbnails")
+    private val thumbCacheDir = File(thumbnailsDir, "thumb")
+    private val slideshowCacheDir = File(thumbnailsDir, "slideshow")
 
     init {
         if (!photosDir.exists()) {
@@ -34,6 +36,12 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
         if (!thumbnailsDir.exists()) {
             thumbnailsDir.mkdirs()
+        }
+        if (!thumbCacheDir.exists()) {
+            thumbCacheDir.mkdirs()
+        }
+        if (!slideshowCacheDir.exists()) {
+            slideshowCacheDir.mkdirs()
         }
         Log.d(tag, "Photos directory initialized at: ${photosDir.absolutePath}")
         Log.d(tag, "Thumbnails directory initialized at: ${thumbnailsDir.absolutePath}")
@@ -78,8 +86,14 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                 // 5. Serve Uploaded Image
                 uri.startsWith("/photos/") -> {
                     val filename = uri.substring("/photos/".length)
+                    val sizeParam = session.parms["size"] ?: ""
                     val isThumbnail = session.parms["thumb"] == "true" || session.parms["thumbnail"] == "true"
-                    servePhotoFile(filename, isThumbnail)
+                    val targetSize = when {
+                        isThumbnail || sizeParam == "thumb" -> 250
+                        sizeParam == "slideshow" -> 1200
+                        else -> -1
+                    }
+                    servePhotoFile(filename, targetSize)
                 }
 
                 // 6. Serve Static Web Assets
@@ -273,9 +287,13 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         return if (targetFile.exists() && targetFile.isFile) {
             if (targetFile.delete()) {
                 Log.i(tag, "Deleted photo: $sanitizedName")
-                val thumbFile = File(thumbnailsDir, sanitizedName)
+                val thumbFile = File(thumbCacheDir, sanitizedName)
                 if (thumbFile.exists() && thumbFile.isFile) {
                     thumbFile.delete()
+                }
+                val slideshowFile = File(slideshowCacheDir, sanitizedName)
+                if (slideshowFile.exists() && slideshowFile.isFile) {
+                    slideshowFile.delete()
                 }
                 newFixedLengthResponse(Response.Status.OK, "application/json", """{"status":"success"}""")
             } else {
@@ -286,7 +304,7 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
     }
 
-    private fun servePhotoFile(filename: String, isThumbnail: Boolean): Response {
+    private fun servePhotoFile(filename: String, targetSize: Int): Response {
         val sanitizedName = filename.replace(Regex("[^a-zA-Z0-9.-]"), "_")
         val file = File(photosDir, sanitizedName)
 
@@ -296,20 +314,20 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
 
         val mimeType = resolveMimeType(sanitizedName)
 
-        if (isThumbnail) {
-            val thumbFile = File(thumbnailsDir, sanitizedName)
-            if (thumbFile.exists() && thumbFile.isFile) {
-                return newChunkedResponse(Response.Status.OK, mimeType, FileInputStream(thumbFile))
+        if (targetSize > 0) {
+            val cacheDir = if (targetSize <= 250) thumbCacheDir else slideshowCacheDir
+            val cachedFile = File(cacheDir, sanitizedName)
+            if (cachedFile.exists() && cachedFile.isFile) {
+                return newChunkedResponse(Response.Status.OK, mimeType, FileInputStream(cachedFile))
             }
 
-            // Generate and cache thumbnail on-the-fly
+            // Generate and cache scaled image on-the-fly
             try {
                 val options = android.graphics.BitmapFactory.Options().apply {
                     inJustDecodeBounds = true
                 }
                 android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
 
-                val targetSize = 250
                 var scale = 1
                 while (options.outWidth / scale / 2 >= targetSize && options.outHeight / scale / 2 >= targetSize) {
                     scale *= 2
@@ -321,7 +339,7 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                 val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
 
                 if (bitmap != null) {
-                    FileOutputStream(thumbFile).use { out ->
+                    FileOutputStream(cachedFile).use { out ->
                         val format = when (mimeType) {
                             "image/png" -> android.graphics.Bitmap.CompressFormat.PNG
                             "image/webp" -> android.graphics.Bitmap.CompressFormat.WEBP
@@ -330,11 +348,11 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                         bitmap.compress(format, 80, out)
                     }
                     bitmap.recycle()
-                    Log.d(tag, "Generated cached thumbnail for: $sanitizedName")
-                    return newChunkedResponse(Response.Status.OK, mimeType, FileInputStream(thumbFile))
+                    Log.d(tag, "Generated cached photo ($targetSize px) for: $sanitizedName")
+                    return newChunkedResponse(Response.Status.OK, mimeType, FileInputStream(cachedFile))
                 }
             } catch (e: Exception) {
-                Log.e(tag, "Failed to generate thumbnail for $sanitizedName", e)
+                Log.e(tag, "Failed to generate scaled photo ($targetSize px) for $sanitizedName", e)
             }
         }
 

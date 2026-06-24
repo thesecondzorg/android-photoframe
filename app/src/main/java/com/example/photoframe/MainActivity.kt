@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                    android.util.Log.d("PhotoFrameJS", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
+                    android.util.Log.i("PhotoFrameJS", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
                     return true
                 }
             }

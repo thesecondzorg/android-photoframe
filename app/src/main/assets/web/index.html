@@ -746,11 +746,15 @@
             const currentSlide = document.getElementById(activeSlideId);
             const nextSlide = document.getElementById(nextSlideId);
 
-            const imageUrl = `/photos/${encodeURIComponent(photo.name)}`;
+            const imageUrl = `/photos/${encodeURIComponent(photo.name)}?size=slideshow`;
             
             // Load the image in memory to check its dimensions
             const img = new Image();
             img.src = imageUrl;
+            img.onerror = () => {
+                console.error(`Failed to load slideshow image: ${imageUrl}. Skipping to next photo.`);
+                setTimeout(nextSlide, 2000);
+            };
             img.onload = async () => {
                 const photoRatio = img.naturalWidth / img.naturalHeight;
                 const screenRatio = window.innerWidth / window.innerHeight;
