@@ -1,6 +1,6 @@
 # Android Photo Frame & Local Upload Server
 
-A native, lightweight Android application that converts any Android tablet (specifically designed and tested on the **Kindle Fire 7**, running Android 9 / API 28) into a premium digital photo frame. 
+A native, lightweight Android application that converts any Android tablet (specifically designed and optimized for low-spec devices like the **Amazon Fire 7**, running Android 9 / Fire OS 7) into a premium digital photo frame. 
 
 It runs an embedded HTTP server (NanoHTTPD) that allows you to drag-and-drop new photos onto a local web panel, or upload them instantly using your phone's native Share Sheet.
 
@@ -9,15 +9,15 @@ It runs an embedded HTTP server (NanoHTTPD) that allows you to drag-and-drop new
 ## 🌟 Key Features
 
 * **Widescreen Slideshow**: Double-buffered smooth cross-dissolve transitions with subtle Ken Burns zoom and pan animations.
-* **Smart Orientation Resizing**:
-  * **Landscape Photos**: Scale to fill the widescreen display (`cover`).
+* **Auto-Start on Boot**: Launches the photo frame automatically into fullscreen immersive mode whenever the tablet is powered on or restarted.
+* **Smart Orientation Rendering**:
+  * **Landscape Photos**: Scaled to fill the widescreen display (`cover`).
   * **Portrait Photos**: Automatically detected at runtime and scaled to fit (`contain`), layered over a color-coordinated, heavily-blurred background version of the same image to eliminate blank side columns (similar to high-end TV screensavers).
-* **EXIF Metadata Reader**: Extracts date and GPS coordinates from image files. Coordinates are dynamically reverse-geocoded into city and country names on the client using the **OpenStreetMap Nominatim API** (with local memory caching).
-* **Clock & QR Code Overlay**: An elegant glassmorphic clock widget floats in the corner. Tapping it displays an offline-generated QR code pointing to the Admin Dashboard.
-* **Onboarding Setup Screen**: Displays step-by-step connection instructions alongside a setup QR code when the frame's storage is empty.
-* **Smart Native Sharing**: Integrates directly with iOS (Apple Shortcuts) and Android (HTTP Request Shortcuts). Allows selecting photos, tapping "Share", and scanning the photo frame's QR code to dynamically resolve the IP address and upload photos in the background (zero maintenance when the tablet's IP changes).
-* **Automatic HEIC-to-JPEG Conversion**: Natively decodes iOS HEIC/HEIF images and formats generic extensionless uploads (e.g. `Repeat Item`) into standard JPEG on the fly.
-* **Dynamic Layout Protection**: Relocates floating widgets (clock to top-left, details to bottom-right) in vertical tablet orientation to prevent overlaps on narrow screens.
+* **EXIF Auto-Rotation**: Inspects EXIF headers in the Kotlin backend and physically rotates decoded image bitmaps before caching/compressing. Portrait photos will never render sideways or upside-down.
+* **Ultra-Fast Metadata Caching**: Utilizes a local JSON-based metadata cache (`metadata_cache.json`) to track photo dimensions, dates, and locations. Reduces API response times from 30+ seconds (EXIF parsing) to under **5 milliseconds**, preventing WebUI hangs and memory leaks.
+* **No-Overlap Widgets**: Floating widgets (glassmorphic clock/date and location overlays) dynamically relocate on screen orientation change (clock to top-left, location to bottom-right) to prevent overlaps on portrait/vertical displays.
+* **Interactive QR Onboarding**: Shows setup instructions and a local connection QR code when empty. Once running, tapping the clock widget slides in a QR code modal that opens the admin page on any scanning phone.
+* **Automatic Format Converter**: Automatically converts uploaded non-standard file formats (such as iOS HEIC/HEIF or extensionless file payloads) into standard JPEG on-the-fly.
 
 ---
 
@@ -30,54 +30,96 @@ It runs an embedded HTTP server (NanoHTTPD) that allows you to drag-and-drop new
 * **Web Frontend**:
   * Clean, framework-free Vanilla HTML5, CSS3, and ES6 JavaScript.
   * **qrcode.min.js**: Packaged locally for 100% offline-capable QR generation.
-  * **Nominatim Client**: Lightweight reverse-geocoding client with coordinates cache.
+  * **OpenStreetMap Nominatim Client**: Asynchronously resolves GPS coordinates to place names directly in the browser using a client-side cache.
 
 ---
 
-## 🚀 Building & Running
+## 💾 Installation Guide (Amazon Fire / Android Tablet)
 
-### Prerequisites
-1. Android SDK installed.
-2. Java 17 configured in your environment.
+### Step 1: Enable USB Debugging on the Tablet
+1. On your Amazon Fire tablet, open **Settings**.
+2. Go to **Device Options** > **About Fire Tablet**.
+3. Locate the **Serial Number** and tap it **7 times** consecutively. A message will appear saying *"You are now a developer"*.
+4. Go back to the **Device Options** menu, tap **Developer Options**, and turn on **USB Debugging**.
 
-### Compile Debug APK
-Run the following Gradle command in the root folder:
-```bash
-./gradlew assembleDebug
-```
-The compiled APK will be located at:
-`app/build/outputs/apk/debug/app-debug.apk`
+### Step 2: Install ADB (Android Debug Bridge) on your Computer
+* **macOS (via Homebrew)**:
+  ```bash
+  brew install android-platform-tools
+  ```
+* **Windows**: Download the SDK Platform-Tools from Google's Android Developer website, extract the ZIP, and add the folder to your system PATH.
 
-### Install onto Tablet
-Connect the tablet via USB with USB Debugging enabled, and run:
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+### Step 3: Install the APK
+1. Connect the tablet to your computer via USB.
+2. If prompted on the tablet screen, tap **Allow/Authorize USB Debugging**.
+3. Run the following command in your terminal from the folder containing the APK:
+   ```bash
+   adb install -r photoframe-debug.apk
+   ```
+4. Find the **Photo Frame** app in your tablet's app drawer and open it once. (Launching it manually at least once is required by Android so the auto-start boot receiver can exit the "stopped" state and start listening for boot completion).
 
 ---
 
 ## 📲 How to Connect and Upload Photos
 
-### Method 1: Safari / Chrome Web App (No Apps Needed)
+### Method 1: Web App Dashboard (Universal)
 1. Tap the clock widget on the photo frame to show the QR code.
 2. Scan it with your phone's camera to open `http://<TABLET_IP>:8080/admin` in Safari (iOS) or Chrome (Android).
 3. **Add to Home Screen**:
-   * **iOS**: Tap the **Share** button at the bottom of Safari, then tap **Add to Home Screen**.
-   * **Android**: Tap the menu dots in Chrome, then tap **Add to Home Screen**.
-4. Open the home screen app, click **Browse Files** (or drag and drop), select your photos, and upload!
+   * **iOS (Safari)**: Tap the **Share** button at the bottom of Safari, then tap **Add to Home Screen**.
+   * **Android (Chrome)**: Tap the menu dots in Chrome, then tap **Add to Home Screen**.
+4. Open the home screen app icon, click **Browse Files** (or drag and drop), select your photos, and upload!
 
-### Method 2: Smart iOS Share Sheet (Direct from Photos App)
-You can set up a custom shortcut that scans the screen QR code to resolve the tablet's IP address dynamically. This means the shortcut never breaks even if your home Wi-Fi reassigns a different IP to the tablet.
+---
 
-1. Open the built-in **Shortcuts** app on your iPhone and tap **`+`** to create a new shortcut named **"Send to Photo Frame"**.
-2. Tap the **Info (i)** button (or settings sliders) and enable **"Show in Share Sheet"**.
-3. Set up the following action flow:
-   * **Receive `Images` from `Shortcut Input`** (if no input, set to "Ask for Images").
-   * Add the **"Scan QR or Barcode"** action block.
-   * Add a **"Replace Text"** action block: Find `/admin` in `QR/Barcode` and replace it with `/api/upload`.
-   * Add a **"Repeat with Each"** action block (repeating items in `Shortcut Input`).
-     * Inside the loop, add a **"Get Contents of URL"** action block:
-       * Set URL to the output of **"Replace Text"**.
-       * Expand options: Method = **POST**, Request Body = **Form**.
-       * Add a new File field: Key = **`file`**, Value = **`Repeat Item`** (Pro-tip: add a **"Convert Image"** block to convert to JPEG first to speed up uploads).
-4. **To use**: Select photos in the Photos app, tap **Share**, tap **"Send to Photo Frame"**, and point the camera at the tablet's QR code.
+### Method 2: iOS Share Sheet Shortcut (iPhone / iPad)
+
+You can set up an Apple Shortcut to send photos directly from your Photos app in two taps.
+
+#### Option A: Static IP Method (Fastest - Single Tap)
+*Note: This method works immediately without opening the camera. It requires setting a DHCP Reservation / Static IP for the tablet on your Wi-Fi router.*
+
+1. Open the **Shortcuts** app on your iPhone and tap **`+`** (top-right) to create a new shortcut. Rename it to **"Send to Photo Frame"**.
+2. Tap the **Info (i)** or **Settings** button and enable **"Show in Share Sheet"**.
+3. Set the top trigger block to: **"Receive `Images` from `Share Sheet`"** (Set *"if there's no input"* to *"Ask for Images"*).
+4. Tap **Add Action**, search for **"URL"** (under Web), and add it:
+   - Set the URL text to: `http://<TABLET_IP>:8080/api/upload` (Replace `<TABLET_IP>` with your tablet's current IP address, e.g. `http://192.168.1.73:8080/api/upload`).
+5. Search for **"Repeat with Each"** (under Scripting) and add it below the URL action.
+6. Search for **"Get Contents of URL"** (under Web) and drag it **inside** the repeat loop:
+   - Set it to: Get contents of **`URL`** (from step 4).
+   - Expand the block's settings (tap the dropdown arrow):
+     * **Method**: Change to **POST**
+     * **Request Body**: Change to **Form**
+     * Tap **Add new field** > choose **File**.
+     * Set the key to **`file`** (exact lowercase spelling).
+     * Set the value to **`Repeat Item`** (the photo currently in the loop).
+7. Tap **Done** to save. Now, select photos in your Photos App, tap **Share** > **Send to Photo Frame** to upload instantly in the background!
+
+#### Option B: QR-Scan Method (Dynamic IP)
+*Use this if your tablet's IP address changes frequently and you do not have a static IP set up.*
+
+1. Follow steps 1-3 from Option A above.
+2. Search for the **"Scan QR or Barcode"** action and add it below the top block.
+3. Search for the **"Replace Text"** action and add it below:
+   - Find `/admin` in the scanned `QR/Barcode` and replace with `/api/upload`.
+4. Search for the **"Repeat with Each"** action and add it below.
+5. Drag a **"Get Contents of URL"** action block inside the repeat loop:
+   - Set it to: Get contents of **`Replaced Text`**.
+   - Expand settings: Method = **POST**, Request Body = **Form**.
+     * Add new field: File -> Key = **`file`**, Value = **`Repeat Item`**.
+6. Save the shortcut. To upload, select photos, tap **Share** > **Send to Photo Frame**, and point the camera at the tablet's QR code.
+
+---
+
+### Method 3: Android Share Sheet Integration
+1. Install the free, open-source app **"HTTP Request Shortcuts"** from the Google Play Store on your phone.
+2. Create a new shortcut and select **"Shortcut to send files/text"**.
+3. Configure the shortcut details:
+   - **Name**: "Send to Photo Frame"
+   - **Method**: `POST`
+   - **URL**: `http://<TABLET_IP>:8080/api/upload`
+   - **Body Type**: `form-data`
+   - Add a parameter with Name = **`file`** and Value = the input file placeholder.
+4. Enable **"Show in Share Sheet"** / **"Receive Files"** (file type `image/*`) in settings and save.
+5. Open your Android gallery, select photos, tap **Share**, and select **"HTTP Shortcuts"** to upload.
+

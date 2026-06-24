@@ -1,7 +1,9 @@
 package com.example.photoframe
 
 import android.content.Context
-import android.location.Geocoder
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.os.Build
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
@@ -22,6 +24,13 @@ data class PhotoMetadata(
     val location: String?
 )
 
+data class CacheEntry(
+    val dateTime: String?,
+    val location: String?,
+    val lastModified: Long,
+    val fileSize: Long
+)
+
 class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
 
     private val tag = "PhotoServer"
@@ -29,6 +38,8 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
     private val thumbnailsDir = context.getExternalFilesDir("thumbnails") ?: File(context.cacheDir, "thumbnails")
     private val thumbCacheDir = File(thumbnailsDir, "thumb")
     private val slideshowCacheDir = File(thumbnailsDir, "slideshow")
+    private val cacheFile = File(thumbnailsDir, "metadata_cache.json")
+    private val metadataCache = HashMap<String, CacheEntry>()
 
     init {
         if (!photosDir.exists()) {
@@ -43,6 +54,18 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         if (!slideshowCacheDir.exists()) {
             slideshowCacheDir.mkdirs()
         }
+        
+        // Clear cached images on startup to ensure orientation fixes are applied to existing photos
+        try {
+            thumbCacheDir.listFiles()?.forEach { it.delete() }
+            slideshowCacheDir.listFiles()?.forEach { it.delete() }
+            Log.d(tag, "Cleared thumbnail and slideshow caches on startup")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to clear caches on startup", e)
+        }
+
+        loadMetadataCache()
+
         Log.d(tag, "Photos directory initialized at: ${photosDir.absolutePath}")
         Log.d(tag, "Thumbnails directory initialized at: ${thumbnailsDir.absolutePath}")
     }
@@ -122,11 +145,90 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
 
     private fun getPhotosMetadataList(): List<PhotoMetadata> {
         val extensions = listOf("jpg", "jpeg", "png", "webp", "gif")
-        return photosDir.listFiles()
+        val files = photosDir.listFiles()
             ?.filter { it.isFile && it.extension.lowercase() in extensions }
             ?.sortedBy { it.name }
-            ?.map { file -> getPhotoMetadata(file) }
-            ?: emptyList()
+            ?: return emptyList()
+
+        var cacheDirty = false
+        val result = ArrayList<PhotoMetadata>()
+
+        synchronized(metadataCache) {
+            for (file in files) {
+                val name = file.name
+                val lastModified = file.lastModified()
+                val fileSize = file.length()
+
+                val cached = metadataCache[name]
+                if (cached != null && cached.lastModified == lastModified && cached.fileSize == fileSize) {
+                    result.add(PhotoMetadata(name, cached.dateTime, cached.location))
+                } else {
+                    val meta = getPhotoMetadata(file)
+                    metadataCache[name] = CacheEntry(meta.dateTime, meta.location, lastModified, fileSize)
+                    result.add(meta)
+                    cacheDirty = true
+                }
+            }
+
+            // Clean up orphaned entries from cache
+            val fileNames = files.map { it.name }.toSet()
+            val keysToRemove = metadataCache.keys.filter { it !in fileNames }
+            if (keysToRemove.isNotEmpty()) {
+                keysToRemove.forEach { metadataCache.remove(it) }
+                cacheDirty = true
+            }
+        }
+
+        if (cacheDirty) {
+            saveMetadataCache()
+        }
+
+        return result
+    }
+
+    private fun loadMetadataCache() {
+        if (!cacheFile.exists()) return
+        try {
+            val jsonStr = cacheFile.readText()
+            val jsonArray = org.json.JSONArray(jsonStr)
+            synchronized(metadataCache) {
+                metadataCache.clear()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val name = obj.getString("name")
+                    val dateTime = if (obj.isNull("dateTime")) null else obj.getString("dateTime")
+                    val location = if (obj.isNull("location")) null else obj.getString("location")
+                    val lastModified = obj.getLong("lastModified")
+                    val fileSize = obj.getLong("fileSize")
+                    metadataCache[name] = CacheEntry(dateTime, location, lastModified, fileSize)
+                }
+            }
+            Log.d(tag, "Loaded ${metadataCache.size} metadata cache entries")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to load metadata cache", e)
+        }
+    }
+
+    private fun saveMetadataCache() {
+        try {
+            val jsonArray = org.json.JSONArray()
+            synchronized(metadataCache) {
+                for ((name, entry) in metadataCache) {
+                    val obj = org.json.JSONObject().apply {
+                        put("name", name)
+                        put("dateTime", entry.dateTime ?: org.json.JSONObject.NULL)
+                        put("location", entry.location ?: org.json.JSONObject.NULL)
+                        put("lastModified", entry.lastModified)
+                        put("fileSize", entry.fileSize)
+                    }
+                    jsonArray.put(obj)
+                }
+            }
+            cacheFile.writeText(jsonArray.toString())
+            Log.d(tag, "Saved metadata cache to disk")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to save metadata cache", e)
+        }
     }
 
     private fun getPhotoMetadata(file: File): PhotoMetadata {
@@ -138,35 +240,13 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                 ?: exifInterface.getAttribute(ExifInterface.TAG_DATETIME)
             val formattedDate = formatExifDate(dateTime)
 
-            // 2. Extract GPS Coordinates & Reverse Geocode
+            // 2. Extract GPS Coordinates
             var locationString: String? = null
             val latLong = FloatArray(2)
             if (exifInterface.getLatLong(latLong)) {
                 val latitude = latLong[0].toDouble()
                 val longitude = latLong[1].toDouble()
-                
-                locationString = if (Build.VERSION.SDK_INT >= 24 && Geocoder.isPresent()) {
-                    try {
-                        val geocoder = Geocoder(context, Locale.getDefault())
-                        val addresses = geocoder.getFromLocation(latitude, longitude, 1)
-                        if (!addresses.isNullOrEmpty()) {
-                            val address = addresses[0]
-                            val city = address.locality ?: address.subAdminArea ?: address.adminArea
-                            val country = address.countryName
-                            if (city != null && country != null) {
-                                "$city, $country"
-                            } else {
-                                city ?: country
-                            }
-                        } else {
-                            String.format(Locale.US, "%.4f, %.4f", latitude, longitude)
-                        }
-                    } catch (e: Exception) {
-                        String.format(Locale.US, "%.4f, %.4f", latitude, longitude)
-                    }
-                } else {
-                    String.format(Locale.US, "%.4f, %.4f", latitude, longitude)
-                }
+                locationString = String.format(Locale.US, "%.4f, %.4f", latitude, longitude)
             }
 
             return PhotoMetadata(file.name, formattedDate, locationString)
@@ -235,8 +315,12 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
             } else {
                 // Attempt to decode as bitmap (handles HEIC, HEIF, and generic filenames without extensions)
                 try {
-                    val bitmap = android.graphics.BitmapFactory.decodeFile(tempFile.absolutePath)
+                    val bitmap = BitmapFactory.decodeFile(tempFile.absolutePath)
                     if (bitmap != null) {
+                        val exifInterface = ExifInterface(tempFile.absolutePath)
+                        val orientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                        val rotatedBitmap = rotateAndFlipBitmap(bitmap, orientation)
+
                         val nameWithoutExt = if (sanitizedName.contains(".")) {
                             sanitizedName.substringBeforeLast(".")
                         } else {
@@ -246,7 +330,10 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                         val destFile = File(photosDir, jpgName)
                         
                         FileOutputStream(destFile).use { out ->
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+                            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        }
+                        if (rotatedBitmap != bitmap) {
+                            rotatedBitmap.recycle()
                         }
                         bitmap.recycle()
                         tempFile.delete()
@@ -323,29 +410,36 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
 
             // Generate and cache scaled image on-the-fly
             try {
-                val options = android.graphics.BitmapFactory.Options().apply {
+                val options = BitmapFactory.Options().apply {
                     inJustDecodeBounds = true
                 }
-                android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+                BitmapFactory.decodeFile(file.absolutePath, options)
 
                 var scale = 1
                 while (options.outWidth / scale / 2 >= targetSize && options.outHeight / scale / 2 >= targetSize) {
                     scale *= 2
                 }
 
-                val decodeOptions = android.graphics.BitmapFactory.Options().apply {
+                val decodeOptions = BitmapFactory.Options().apply {
                     inSampleSize = scale
                 }
-                val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
 
                 if (bitmap != null) {
+                    val exifInterface = ExifInterface(file.absolutePath)
+                    val orientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                    val rotatedBitmap = rotateAndFlipBitmap(bitmap, orientation)
+
                     FileOutputStream(cachedFile).use { out ->
                         val format = when (mimeType) {
-                            "image/png" -> android.graphics.Bitmap.CompressFormat.PNG
-                            "image/webp" -> android.graphics.Bitmap.CompressFormat.WEBP
-                            else -> android.graphics.Bitmap.CompressFormat.JPEG
+                            "image/png" -> Bitmap.CompressFormat.PNG
+                            "image/webp" -> Bitmap.CompressFormat.WEBP
+                            else -> Bitmap.CompressFormat.JPEG
                         }
-                        bitmap.compress(format, 80, out)
+                        rotatedBitmap.compress(format, 80, out)
+                    }
+                    if (rotatedBitmap != bitmap) {
+                        rotatedBitmap.recycle()
                     }
                     bitmap.recycle()
                     Log.d(tag, "Generated cached photo ($targetSize px) for: $sanitizedName")
@@ -416,5 +510,37 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
             Log.e(tag, "Failed to get IP address", ex)
         }
         return null
+    }
+
+    private fun rotateAndFlipBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        var needTransform = true
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            else -> needTransform = false
+        }
+        if (!needTransform) return bitmap
+        return try {
+            val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (transformed != bitmap) {
+                bitmap.recycle()
+            }
+            transformed
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to rotate bitmap", e)
+            bitmap
+        }
     }
 }
