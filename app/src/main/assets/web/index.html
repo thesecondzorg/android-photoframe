@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Frame Slideshow</title>
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Outfit:wght@200;400;600&display=swap" rel="stylesheet">
+    <script src="/qrcode.min.js"></script>
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #05050a;
+            font-family: 'Inter', sans-serif;
+            color: #ffffff;
+        }
+
+        /* Fullscreen Slide Containers */
+        .slide-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transition: opacity 2s ease-in-out;
+            transform-origin: center center;
+        }
+
+        .slide.active {
+            opacity: 1;
+        }
+
+        .slide-blur-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(40px) brightness(0.5);
+            transform: scale(1.1);
+            z-index: 1;
+        }
+
+        .slide-fg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-repeat: no-repeat;
+            background-position: center;
+            z-index: 2;
+        }
+
+        .fill-mode .slide-fg {
+            background-size: cover;
+        }
+
+        .fit-mode .slide-fg {
+            background-size: contain;
+        }
+
+        /* Ken Burns Animations */
+        .kb-zoom-in {
+            animation: kb-zoom-in-anim 12s ease-out forwards;
+        }
+        .kb-zoom-out {
+            animation: kb-zoom-out-anim 12s ease-out forwards;
+        }
+        .kb-pan-right {
+            animation: kb-pan-right-anim 12s ease-out forwards;
+        }
+        .kb-pan-left {
+            animation: kb-pan-left-anim 12s ease-out forwards;
+        }
+
+        @keyframes kb-zoom-in-anim {
+            0% { transform: scale(1.0); }
+            100% { transform: scale(1.08); }
+        }
+
+        @keyframes kb-zoom-out-anim {
+            0% { transform: scale(1.08); }
+            100% { transform: scale(1.0); }
+        }
+
+        @keyframes kb-pan-right-anim {
+            0% { transform: scale(1.06) translate(-2%, 0); }
+            100% { transform: scale(1.06) translate(2%, 0); }
+        }
+
+        @keyframes kb-pan-left-anim {
+            0% { transform: scale(1.06) translate(2%, 0); }
+            100% { transform: scale(1.06) translate(-2%, 0); }
+        }
+
+        /* Overlay Widgets */
+        .overlay {
+            position: absolute;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Clock Widget */
+        .clock-widget {
+            bottom: 30px;
+            left: 30px;
+            padding: 15px 25px;
+            background: rgba(10, 10, 15, 0.45);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        .clock-widget:hover {
+            background: rgba(20, 20, 30, 0.65);
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: scale(1.02);
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        /* QR Code Modal styling */
+        .qr-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 30;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(5, 5, 10, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .qr-modal.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .qr-card {
+            background: rgba(20, 20, 35, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 35px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            transform: scale(0.95);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .qr-modal.visible .qr-card {
+            transform: scale(1);
+        }
+
+        .qr-code-container {
+            background: #ffffff;
+            padding: 14px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .qr-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 600;
+            background: linear-gradient(to right, #a5b4fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .qr-text {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .qr-close-btn {
+            background: #6366f1;
+            color: #ffffff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .qr-close-btn:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+
+        /* Photo Info Widget */
+        .info-widget {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            padding: 12px 20px;
+            background: rgba(10, 10, 15, 0.45);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            text-align: right;
+            transition: opacity 0.5s ease;
+            max-width: 350px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .info-location {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #ffffff;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .info-date {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .clock-time {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 200;
+            line-height: 1.1;
+            letter-spacing: -1px;
+            color: #ffffff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .clock-date {
+            font-size: 0.95rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: rgba(255, 255, 255, 0.85);
+            margin-top: 4px;
+        }
+
+        /* Welcome / Setup Screen (when no photos exist) */
+        .welcome-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #09090e 0%, #121225 100%);
+            padding: 20px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease;
+        }
+
+        .welcome-screen.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Background grid effect for welcome screen */
+        .welcome-bg-glow {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 70%);
+            top: 10%;
+            left: 15%;
+            filter: blur(50px);
+            pointer-events: none;
+        }
+
+        .welcome-bg-glow-2 {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, rgba(236, 72, 153, 0) 70%);
+            bottom: 10%;
+            right: 15%;
+            filter: blur(60px);
+            pointer-events: none;
+        }
+
+        .welcome-card {
+            background: rgba(20, 20, 35, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 40px;
+            max-width: 640px;
+            width: 100%;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .welcome-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 600;
+            background: linear-gradient(to right, #a5b4fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 15px;
+        }
+
+        .welcome-text {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.05rem;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .setup-steps {
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .step-num {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-right: 15px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.4);
+        }
+
+        .step-text {
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.85);
+            line-height: 1.4;
+            padding-top: 4px;
+        }
+
+        .address-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px dashed rgba(99, 102, 241, 0.5);
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-family: monospace;
+            font-size: 1.25rem;
+            color: #818cf8;
+            margin-top: 10px;
+            display: inline-block;
+            letter-spacing: 1px;
+            word-break: break-all;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 10px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Welcome Card Responsive Column Layout for Portrait Displays */
+        @media (max-width: 768px), (orientation: portrait) {
+            .welcome-screen {
+                padding: 10px;
+                overflow-y: auto;
+            }
+            .welcome-card {
+                flex-direction: column !important;
+                align-items: center !important;
+                text-align: center !important;
+                padding: 30px 20px !important;
+                max-height: 95vh;
+                overflow-y: auto;
+            }
+            .welcome-card > div {
+                text-align: center !important;
+            }
+            .welcome-title, .welcome-text {
+                text-align: center !important;
+            }
+            .welcome-card .setup-steps {
+                margin: 20px 0 !important;
+            }
+            .welcome-card div[style*="flex-shrink"] {
+                width: 100% !important;
+                max-width: 280px !important;
+                padding: 15px !important;
+            }
+            #welcomeQrCode {
+                width: 120px !important;
+                height: 120px !important;
+            }
+            /* Adjust clock and info widgets in portrait to avoid overlap */
+            .clock-widget {
+                bottom: auto !important;
+                top: 20px !important;
+                left: 20px !important;
+                padding: 10px 18px !important;
+                border-radius: 12px !important;
+            }
+            .clock-time {
+                font-size: 2.6rem !important;
+            }
+            .clock-date {
+                font-size: 0.8rem !important;
+                letter-spacing: 1px !important;
+            }
+            .info-widget {
+                bottom: 20px !important;
+                right: 20px !important;
+                padding: 8px 14px !important;
+                max-width: 260px !important;
+                border-radius: 10px !important;
+            }
+            .info-location {
+                font-size: 0.8rem !important;
+            }
+            .info-date {
+                font-size: 0.75rem !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Slide Containers for transition -->
+    <div class="slide-container">
+        <div id="slide1" class="slide">
+            <div class="slide-blur-bg"></div>
+            <div class="slide-fg"></div>
+        </div>
+        <div id="slide2" class="slide">
+            <div class="slide-blur-bg"></div>
+            <div class="slide-fg"></div>
+        </div>
+    </div>
+
+    <!-- Clock Overlay -->
+    <div class="overlay clock-widget" id="clockWidget">
+        <span class="clock-time" id="timeDisplay">12:00</span>
+        <span class="clock-date" id="dateDisplay">Wednesday, Jun 24</span>
+    </div>
+
+    <!-- Photo Info Overlay (bottom right) -->
+    <div class="overlay info-widget" id="infoWidget" style="opacity: 0;">
+        <div class="info-location" id="infoLocation">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span id="infoLocationText"></span>
+        </div>
+        <div class="info-date" id="infoDate">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; flex-shrink: 0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span id="infoDateText"></span>
+        </div>
+    </div>
+
+    <!-- Welcome / Setup screen -->
+    <div class="welcome-screen" id="welcomeScreen">
+        <div class="welcome-bg-glow"></div>
+        <div class="welcome-bg-glow-2"></div>
+        <div class="welcome-card" style="display: flex; gap: 30px; align-items: center; text-align: left; max-width: 750px;">
+            <div style="flex: 1;">
+                <h1 class="welcome-title" style="text-align: left;">Photo Frame Setup</h1>
+                <p class="welcome-text" style="text-align: left; margin-bottom: 20px;">Your tablet is ready to show beautiful memories. Follow these quick steps to send photos over the network:</p>
+                
+                <div class="setup-steps" style="margin-bottom: 0;">
+                    <div class="step-item">
+                        <span class="step-num">1</span>
+                        <span class="step-text">Ensure your computer or phone is connected to the same Wi-Fi network.</span>
+                    </div>
+                    <div class="step-item">
+                        <span class="step-num">2</span>
+                        <span class="step-text">Open a browser and navigate to the address shown on the right, or simply scan the QR code.</span>
+                    </div>
+                    <div class="step-item" style="margin-bottom: 0;">
+                        <span class="step-num">3</span>
+                        <span class="step-text">Drag and drop photos directly onto the page to upload them here.</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 15px; background: rgba(0,0,0,0.25); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); width: 220px; flex-shrink: 0; text-align: center;">
+                <div id="welcomeQrCode" style="background: white; padding: 10px; border-radius: 12px; display: flex; justify-content: center; align-items: center; width: 150px; height: 150px;"></div>
+                <div class="address-box" style="font-size: 0.85rem; padding: 8px 12px; width: 100%; text-align: center; margin-top: 0;" id="adminAddress">http://loading-ip:8080/admin</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div class="qr-modal" id="qrModal" onclick="closeQrModal(event)">
+        <div class="qr-card" onclick="event.stopPropagation()">
+            <h2 class="qr-title">Upload Photos</h2>
+            <p class="qr-text">Scan the QR code below on your phone or computer to open the admin upload page:</p>
+            <div class="qr-code-container" id="qrCodeCanvas"></div>
+            <div class="address-box" style="font-size: 1rem; padding: 10px 15px; width: 100%; text-align: center;" id="qrAddress">http://loading-ip:8080/admin</div>
+            <button class="qr-close-btn" onclick="hideQrModal()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let photos = [];
+        let currentPhotoIndex = -1;
+        let activeSlideId = 'slide1';
+        let slideshowInterval = null;
+        let isWelcomeVisible = false;
+
+        const SLIDE_DURATION = 10000; // 10 seconds per photo
+        const POLL_INTERVAL = 3000;   // Poll for new photos every 3 seconds for near-instant reaction
+
+        // DOM elements
+        const slide1 = document.getElementById('slide1');
+        const slide2 = document.getElementById('slide2');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const dateDisplay = document.getElementById('dateDisplay');
+        const welcomeScreen = document.getElementById('welcomeScreen');
+        const adminAddress = document.getElementById('adminAddress');
+        const clockWidget = document.getElementById('clockWidget');
+
+        // 1. Clock Updates
+        function updateClock() {
+            const now = new Date();
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+            hours = hours < 10 ? '0' + hours : hours;
+            minutes = minutes < 10 ? '0' + minutes : minutes;
+            timeDisplay.textContent = `${hours}:${minutes}`;
+
+            const options = { weekday: 'long', month: 'short', day: 'numeric' };
+            dateDisplay.textContent = now.toLocaleDateString('en-US', options);
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // 2. Fetch IP and Server Info
+        async function fetchServerInfo() {
+            try {
+                const response = await fetch('/api/info');
+                if (response.ok) {
+                    const data = await response.json();
+                    let url = `http://localhost:${data.port}/admin`;
+                    if (data.ip && data.ip !== 'Unknown') {
+                        url = `http://${data.ip}:${data.port}/admin`;
+                    }
+                    adminAddress.textContent = url;
+                    
+                    // Generate QR code for the welcome screen
+                    generateWelcomeQrCode(url);
+                }
+            } catch (err) {
+                console.error("Failed to fetch server info", err);
+            }
+        }
+
+        // 3. Load Photos List and Manage Slideshow state
+        async function loadPhotos() {
+            try {
+                const response = await fetch('/api/photos');
+                if (response.ok) {
+                    const latestPhotos = await response.json();
+                    
+                    // Check if photo list changed
+                    if (JSON.stringify(latestPhotos) !== JSON.stringify(photos)) {
+                        const oldPhotos = [...photos];
+                        const oldPhotosCount = oldPhotos.length;
+                        photos = latestPhotos;
+                        
+                        if (photos.length === 0) {
+                            showWelcome();
+                        } else {
+                            hideWelcome();
+                            // Index bounds safety check
+                            if (currentPhotoIndex >= photos.length) {
+                                currentPhotoIndex = 0;
+                            }
+                            
+                            if (oldPhotosCount === 0 || currentPhotoIndex === -1) {
+                                // Start slideshow immediately if it was empty or not started
+                                currentPhotoIndex = 0;
+                                changeSlide(photos[currentPhotoIndex]);
+                                startSlideshow();
+                            } else if (photos.length > oldPhotosCount) {
+                                // Photos were added! Let's find the new ones.
+                                const newPhotos = photos.filter(lp => !oldPhotos.some(p => p.name === lp.name));
+                                if (newPhotos.length > 0) {
+                                    // Display the latest added photo immediately
+                                    const latestNewPhoto = newPhotos[newPhotos.length - 1];
+                                    const newIndex = photos.findIndex(p => p.name === latestNewPhoto.name);
+                                    if (newIndex !== -1) {
+                                        currentPhotoIndex = newIndex;
+                                        changeSlide(photos[currentPhotoIndex]);
+                                        // Reset slideshow interval timer so it stays on screen for full duration
+                                        startSlideshow();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch photos", err);
+            }
+        }
+
+        // Show/Hide Welcome setup screen
+        function showWelcome() {
+            if (!isWelcomeVisible) {
+                welcomeScreen.classList.add('visible');
+                clockWidget.style.opacity = '0';
+                isWelcomeVisible = true;
+                stopSlideshow();
+                fetchServerInfo(); // refresh IP if we are on welcome screen
+            }
+        }
+
+        function hideWelcome() {
+            if (isWelcomeVisible) {
+                welcomeScreen.classList.remove('visible');
+                clockWidget.style.opacity = '1';
+                isWelcomeVisible = false;
+            }
+        }
+
+        // 4. Slideshow Logic
+        function startSlideshow() {
+            stopSlideshow();
+            slideshowInterval = setInterval(nextSlide, SLIDE_DURATION);
+        }
+
+        function stopSlideshow() {
+            if (slideshowInterval) {
+                clearInterval(slideshowInterval);
+                slideshowInterval = null;
+            }
+        }
+
+        function nextSlide() {
+            if (photos.length === 0) return;
+            currentPhotoIndex = (currentPhotoIndex + 1) % photos.length;
+            changeSlide(photos[currentPhotoIndex]);
+        }
+
+        // Ken Burns effect types
+        const kbEffects = ['kb-zoom-in', 'kb-zoom-out', 'kb-pan-left', 'kb-pan-right'];
+
+        function changeSlide(photo) {
+            const nextSlideId = activeSlideId === 'slide1' ? 'slide2' : 'slide1';
+            const currentSlide = document.getElementById(activeSlideId);
+            const nextSlide = document.getElementById(nextSlideId);
+
+            const imageUrl = `/photos/${encodeURIComponent(photo.name)}`;
+            
+            // Load the image in memory to check its dimensions
+            const img = new Image();
+            img.src = imageUrl;
+            img.onload = async () => {
+                const photoRatio = img.naturalWidth / img.naturalHeight;
+                const screenRatio = window.innerWidth / window.innerHeight;
+                
+                // Determine if photo matches screen orientation to fill (cover) vs fit (contain + blur)
+                const matchesScreen = (screenRatio > 1 && photoRatio > 1) || (screenRatio <= 1 && photoRatio <= 1);
+                
+                // Clean up old classes from next slide
+                nextSlide.className = 'slide';
+                if (matchesScreen) {
+                    nextSlide.classList.add('fill-mode');
+                } else {
+                    nextSlide.classList.add('fit-mode');
+                }
+                
+                // Store photo aspect ratio for dynamic resize support
+                nextSlide.dataset.photoRatio = photoRatio;
+                
+                // Set image sources on background and foreground layers
+                const blurBg = nextSlide.querySelector('.slide-blur-bg');
+                const fg = nextSlide.querySelector('.slide-fg');
+                
+                blurBg.style.backgroundImage = `url('${imageUrl}')`;
+                fg.style.backgroundImage = `url('${imageUrl}')`;
+                
+                // Update photo info overlay (location/date)
+                const infoWidget = document.getElementById('infoWidget');
+                const infoLocation = document.getElementById('infoLocation');
+                const infoLocationText = document.getElementById('infoLocationText');
+                const infoDate = document.getElementById('infoDate');
+                const infoDateText = document.getElementById('infoDateText');
+                
+                let hasInfo = false;
+                
+                // Dynamically resolve GPS coordinates to place names
+                let locationName = photo.location;
+                if (locationName) {
+                    locationName = await resolvePlaceName(locationName);
+                }
+                
+                if (locationName) {
+                    infoLocationText.textContent = locationName;
+                    infoLocation.style.display = 'flex';
+                    hasInfo = true;
+                } else {
+                    infoLocation.style.display = 'none';
+                }
+                
+                if (photo.dateTime) {
+                    infoDateText.textContent = photo.dateTime;
+                    infoDate.style.display = 'flex';
+                    hasInfo = true;
+                } else {
+                    infoDate.style.display = 'none';
+                }
+                
+                if (hasInfo) {
+                    infoWidget.style.opacity = '1';
+                } else {
+                    infoWidget.style.opacity = '0';
+                }
+                
+                // Select random Ken Burns animation class
+                const randomEffect = kbEffects[Math.floor(Math.random() * kbEffects.length)];
+                
+                // Transition slides after layout is set
+                setTimeout(() => {
+                    nextSlide.classList.add('active', randomEffect);
+                    currentSlide.classList.remove('active');
+                    activeSlideId = nextSlideId;
+                }, 50);
+            };
+        }
+
+        // Start initialization
+        fetchServerInfo();
+        loadPhotos();
+        // Polling loop
+        setInterval(loadPhotos, POLL_INTERVAL);
+
+        // 5. QR Code Helpers
+        let welcomeQrGenerated = false;
+        let modalQrGenerated = false;
+        let lastAdminUrl = "";
+
+        function generateWelcomeQrCode(url) {
+            if (welcomeQrGenerated && lastAdminUrl === url) return;
+            const container = document.getElementById('welcomeQrCode');
+            if (container) {
+                container.innerHTML = "";
+                new QRCode(container, {
+                    text: url,
+                    width: 130,
+                    height: 130,
+                    colorDark: "#05050a",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                lastAdminUrl = url;
+                welcomeQrGenerated = true;
+            }
+        }
+
+        function generateModalQrCode(url) {
+            if (modalQrGenerated && lastAdminUrl === url) return;
+            const container = document.getElementById('qrCodeCanvas');
+            if (container) {
+                container.innerHTML = "";
+                new QRCode(container, {
+                    text: url,
+                    width: 180,
+                    height: 180,
+                    colorDark: "#05050a",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                document.getElementById('qrAddress').textContent = url;
+                lastAdminUrl = url;
+                modalQrGenerated = true;
+            }
+        }
+
+        function showQrModal() {
+            const qrModal = document.getElementById('qrModal');
+            qrModal.classList.add('visible');
+        }
+
+        function hideQrModal() {
+            const qrModal = document.getElementById('qrModal');
+            qrModal.classList.remove('visible');
+        }
+
+        function closeQrModal(event) {
+            hideQrModal();
+        }
+
+        // Click handler to Date/Time Widget
+        clockWidget.addEventListener('click', () => {
+            const url = adminAddress.textContent;
+            if (!url.includes('loading-ip')) {
+                generateModalQrCode(url);
+                showQrModal();
+            }
+        });
+
+        // 6. GPS Reverse Geocoding via OpenStreetMap Nominatim
+        const locationCache = {};
+
+        async function resolvePlaceName(locationStr) {
+            if (!locationStr) return null;
+            
+            // Check if locationStr is in the format "lat, lon"
+            const coordsRegex = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/;
+            const match = locationStr.match(coordsRegex);
+            
+            if (!match) {
+                // Already a place name
+                return locationStr;
+            }
+            
+            const lat = match[1];
+            const lon = match[2];
+            const cacheKey = `${lat},${lon}`;
+            
+            if (locationCache[cacheKey]) {
+                return locationCache[cacheKey];
+            }
+            
+            try {
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`;
+                const response = await fetch(url, {
+                    headers: {
+                        'Accept-Language': 'en'
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const address = data.address;
+                    if (address) {
+                        const city = address.city || address.town || address.village || address.suburb || address.county || "";
+                        const country = address.country || "";
+                        let placeName = "";
+                        if (city && country) {
+                            placeName = `${city}, ${country}`;
+                        } else {
+                            placeName = city || country || locationStr;
+                        }
+                        locationCache[cacheKey] = placeName;
+                        return placeName;
+                    }
+                }
+            } catch (err) {
+                console.error("OSM Nominatim Geocoder failed", err);
+            }
+            
+            return locationStr; // Fallback to raw coordinates
+        }
+
+        // 7. Handle screen rotation / orientation change dynamically
+        window.addEventListener('resize', () => {
+            console.log(`Window resized to: ${window.innerWidth}x${window.innerHeight}, ratio: ${window.innerWidth / window.innerHeight}`);
+            ['slide1', 'slide2'].forEach(id => {
+                const slide = document.getElementById(id);
+                if (!slide) return;
+                
+                const photoRatioStr = slide.dataset.photoRatio;
+                if (!photoRatioStr) return;
+                
+                const photoRatio = parseFloat(photoRatioStr);
+                const screenRatio = window.innerWidth / window.innerHeight;
+                
+                const matchesScreen = (screenRatio > 1 && photoRatio > 1) || (screenRatio <= 1 && photoRatio <= 1);
+                
+                slide.classList.remove('fill-mode', 'fit-mode');
+                if (matchesScreen) {
+                    slide.classList.add('fill-mode');
+                } else {
+                    slide.classList.add('fit-mode');
+                }
+            });
+        });
+        
+        console.log(`Window initialized with size: ${window.innerWidth}x${window.innerHeight}, ratio: ${window.innerWidth / window.innerHeight}`);
+    </script>
+</body>
+</html>
