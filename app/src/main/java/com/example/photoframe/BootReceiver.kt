@@ -8,8 +8,9 @@ import android.util.Log
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (Intent.ACTION_BOOT_COMPLETED == intent.action) {
-            Log.i("BootReceiver", "Boot completed — launching Photo Frame")
+        val action = intent.action
+        if (Intent.ACTION_BOOT_COMPLETED == action || Intent.ACTION_MY_PACKAGE_REPLACED == action) {
+            Log.i("BootReceiver", "Triggered by action: $action — launching Photo Frame")
             try {
                 // Start the keep-alive foreground service first so the WakeLock
                 // is held before any user interaction is required.
@@ -26,7 +27,7 @@ class BootReceiver : BroadcastReceiver() {
                 }
                 context.startActivity(activityIntent)
             } catch (e: Exception) {
-                Log.e("BootReceiver", "Failed to start Photo Frame on boot", e)
+                Log.e("BootReceiver", "Failed to start Photo Frame on action $action", e)
             }
         }
     }

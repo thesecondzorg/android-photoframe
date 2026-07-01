@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.2 (versionCode 4) — 2026-07-01
+
+### Features & Fixes
+- **Auto-restart on update** — The app now automatically restarts itself and launches the photo frame UI once the OTA self-update installation finishes, using a custom package replacement broadcast listener.
+
+---
+
 ## v1.1.1 (versionCode 3) — 2026-07-01
 
 ### UX Fixes
