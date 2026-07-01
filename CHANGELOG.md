@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.3 (versionCode 5) — 2026-07-01
+
+### Features & Fixes
+- **Auto-Wake Screen off Recovery** — The app now automatically detects when the tablet screen turns off (e.g. from user locking the device via the hardware power button). If this occurs outside the configured night/dim schedule hours, the background service will automatically wake the screen back up after 3 seconds and resume the slideshow. If it's night, the screen remains turned off.
+
+---
+
 ## v1.1.2 (versionCode 4) — 2026-07-01
 
 ### Features & Fixes
