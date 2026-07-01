@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths for OTA update APK sharing.
+    external-files-path maps to context.getExternalFilesDir(null),
+    so "updates/" is Android/data/com.example.photoframe/files/updates/
+-->
+<paths>
+    <external-files-path name="updates" path="updates/" />
+</paths>

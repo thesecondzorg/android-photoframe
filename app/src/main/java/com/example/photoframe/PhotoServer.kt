@@ -1,11 +1,13 @@
 package com.example.photoframe
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.os.Build
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
@@ -13,7 +15,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.net.HttpURLConnection
 import java.net.NetworkInterface
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Locale
@@ -39,7 +43,16 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
     private val thumbCacheDir = File(thumbnailsDir, "thumb")
     private val slideshowCacheDir = File(thumbnailsDir, "slideshow")
     private val cacheFile = File(thumbnailsDir, "metadata_cache.json")
+    private val settingsFile = File(thumbnailsDir, "settings.json")
     private val metadataCache = HashMap<String, CacheEntry>()
+
+    // OTA update state -------------------------------------------------------
+    private enum class UpdateDownloadState { IDLE, DOWNLOADING, READY, ERROR }
+    @Volatile private var updateDownloadState = UpdateDownloadState.IDLE
+    @Volatile private var updateDownloadError: String? = null
+    private val updatesDir = context.getExternalFilesDir("updates") ?: File(context.filesDir, "updates")
+    private val pendingApkFile = File(updatesDir, "photoframe-update.apk")
+    // ------------------------------------------------------------------------
 
     init {
         if (!photosDir.exists()) {
@@ -53,15 +66,6 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
         if (!slideshowCacheDir.exists()) {
             slideshowCacheDir.mkdirs()
-        }
-        
-        // Clear cached images on startup to ensure orientation fixes are applied to existing photos
-        try {
-            thumbCacheDir.listFiles()?.forEach { it.delete() }
-            slideshowCacheDir.listFiles()?.forEach { it.delete() }
-            Log.d(tag, "Cleared thumbnail and slideshow caches on startup")
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to clear caches on startup", e)
         }
 
         loadMetadataCache()
@@ -81,19 +85,26 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                 uri == "/api/info" && method == Method.GET -> {
                     val ip = getWifiIpAddress() ?: "Unknown"
                     val count = getPhotoCount()
-                    val json = """{"ip":"$ip","port":$listeningPort,"photoCount":$count}"""
+                    val json = org.json.JSONObject().apply {
+                        put("ip", ip)
+                        put("port", listeningPort)
+                        put("photoCount", count)
+                    }.toString()
                     newFixedLengthResponse(Response.Status.OK, "application/json", json)
                 }
 
                 // 2. API - List Photos
                 uri == "/api/photos" && method == Method.GET -> {
                     val photosMetadataList = getPhotosMetadataList()
-                    val json = photosMetadataList.joinToString(separator = ",", prefix = "[", postfix = "]") { meta ->
-                        val dateStr = meta.dateTime?.let { "\"$it\"" } ?: "null"
-                        val locStr = meta.location?.let { "\"$it\"" } ?: "null"
-                        """{"name":"${meta.name}","dateTime":$dateStr,"location":$locStr}"""
+                    val jsonArray = org.json.JSONArray()
+                    photosMetadataList.forEach { meta ->
+                        jsonArray.put(org.json.JSONObject().apply {
+                            put("name", meta.name)
+                            put("dateTime", meta.dateTime ?: org.json.JSONObject.NULL)
+                            put("location", meta.location ?: org.json.JSONObject.NULL)
+                        })
                     }
-                    newFixedLengthResponse(Response.Status.OK, "application/json", json)
+                    newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
                 }
 
                 // 3. API - Upload Photo
@@ -106,7 +117,29 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                     handleDelete(session)
                 }
 
-                // 5. Serve Uploaded Image
+                // 5. API - Get Settings
+                uri == "/api/settings" && method == Method.GET -> {
+                    handleGetSettings()
+                }
+
+                // 6. API - Save Settings
+                uri == "/api/settings" && method == Method.POST -> {
+                    handlePostSettings(session)
+                }
+
+                // 7. API - OTA: Check for available update
+                uri == "/api/update/check" && method == Method.GET -> handleUpdateCheck()
+
+                // 8. API - OTA: Start async APK download
+                uri == "/api/update/download" && method == Method.POST -> handleUpdateDownload(session)
+
+                // 9. API - OTA: Poll download progress
+                uri == "/api/update/status" && method == Method.GET -> handleUpdateStatus()
+
+                // 10. API - OTA: Trigger system package installer on downloaded APK
+                uri == "/api/update/install" && method == Method.POST -> handleUpdateInstall()
+
+                // 11. Serve Uploaded Image
                 uri.startsWith("/photos/") -> {
                     val filename = uri.substring("/photos/".length)
                     val sizeParam = session.parms["size"] ?: ""
@@ -119,7 +152,7 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
                     servePhotoFile(filename, targetSize)
                 }
 
-                // 6. Serve Static Web Assets
+                // 8. Serve Static Web Assets
                 else -> {
                     serveStaticAsset(uri)
                 }
@@ -130,17 +163,9 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
     }
 
-    private fun getPhotosList(): List<String> {
-        val extensions = listOf("jpg", "jpeg", "png", "webp", "gif")
-        return photosDir.listFiles()
-            ?.filter { it.isFile && it.extension.lowercase() in extensions }
-            ?.map { it.name }
-            ?.sorted()
-            ?: emptyList()
-    }
-
     private fun getPhotoCount(): Int {
-        return getPhotosList().size
+        val extensions = setOf("jpg", "jpeg", "png", "webp", "gif")
+        return photosDir.listFiles()?.count { it.isFile && it.extension.lowercase() in extensions } ?: 0
     }
 
     private fun getPhotosMetadataList(): List<PhotoMetadata> {
@@ -180,7 +205,8 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
 
         if (cacheDirty) {
-            saveMetadataCache()
+            // Save on a background thread to avoid blocking the HTTP response
+            Thread { saveMetadataCache() }.start()
         }
 
         return result
@@ -276,6 +302,15 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
     }
 
     private fun handleUpload(session: IHTTPSession): Response {
+        // Reject oversized uploads before buffering to disk
+        val contentLength = session.headers["content-length"]?.toLongOrNull() ?: 0L
+        val maxUploadBytes = 50L * 1024 * 1024 // 50 MB
+        if (contentLength > maxUploadBytes) {
+            return newFixedLengthResponse(
+                Response.Status.BAD_REQUEST, MIME_PLAINTEXT,
+                "File too large (max 50 MB)"
+            )
+        }
         val files = HashMap<String, String>()
         return try {
             session.parseBody(files)
@@ -360,6 +395,234 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         }
     }
 
+    private fun handleGetSettings(): Response {
+        val defaults = buildDefaultSettings()
+        return try {
+            val json = if (settingsFile.exists()) settingsFile.readText() else defaults
+            val response = newFixedLengthResponse(Response.Status.OK, "application/json", json)
+            response.addHeader("Access-Control-Allow-Origin", "*")
+            response
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to read settings", e)
+            newFixedLengthResponse(Response.Status.OK, "application/json", defaults)
+        }
+    }
+
+    private fun buildDefaultSettings(): String {
+        return org.json.JSONObject().apply {
+            put("dimEnabled", false)
+            put("dimFrom", "22:00")
+            put("dimTo", "07:00")
+            put("dimLevel", 0.9)
+            put("slideDuration", 10)
+            put("updateUrl", "")   // URL of the update manifest JSON
+        }.toString()
+    }
+
+    private fun handlePostSettings(session: IHTTPSession): Response {
+        return try {
+            val files = HashMap<String, String>()
+            session.parseBody(files)
+            // NanoHTTPD stores raw POST body under "postData" key
+            val body = files["postData"] ?: ""
+            if (body.isBlank()) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Empty body")
+            }
+            val parsed = org.json.JSONObject(body)
+            val timeRegex = Regex("^\\d{2}:\\d{2}$")
+            // Validate and sanitize each field before persisting
+            val validated = org.json.JSONObject().apply {
+                put("dimEnabled", parsed.optBoolean("dimEnabled", false))
+                val rawFrom = parsed.optString("dimFrom", "22:00")
+                put("dimFrom", if (rawFrom.matches(timeRegex)) rawFrom else "22:00")
+                val rawTo = parsed.optString("dimTo", "07:00")
+                put("dimTo", if (rawTo.matches(timeRegex)) rawTo else "07:00")
+                put("dimLevel", parsed.optDouble("dimLevel", 0.9).coerceIn(0.0, 1.0))
+                put("slideDuration", parsed.optInt("slideDuration", 10).coerceIn(3, 300))
+                put("updateUrl", parsed.optString("updateUrl", "").trim())
+            }
+            settingsFile.writeText(validated.toString())
+            Log.i(tag, "Settings saved: $validated")
+            val response = newFixedLengthResponse(Response.Status.OK, "application/json", """{"status":"ok"}""")
+            response.addHeader("Access-Control-Allow-Origin", "*")
+            response
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to save settings", e)
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Failed to save settings: ${e.message}")
+        }
+    }
+
+    // ── OTA Update Handlers ──────────────────────────────────────────────────
+
+    /**
+     * GET /api/update/check
+     * Fetches the update manifest JSON from the configured updateUrl and compares
+     * versionCode against the currently installed APK.
+     */
+    private fun handleUpdateCheck(): Response {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val currentVersionCode = pInfo.longVersionCode
+            val currentVersionName = pInfo.versionName ?: "unknown"
+
+            val settings = if (settingsFile.exists()) org.json.JSONObject(settingsFile.readText())
+                           else org.json.JSONObject()
+            val updateUrl = settings.optString("updateUrl", "").trim()
+
+            if (updateUrl.isBlank()) {
+                val json = org.json.JSONObject().apply {
+                    put("status", "not_configured")
+                    put("currentVersion", currentVersionName)
+                    put("currentVersionCode", currentVersionCode)
+                }
+                return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
+                    .also { it.addHeader("Access-Control-Allow-Origin", "*") }
+            }
+
+            val conn = URL(updateUrl).openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout  = 10_000
+            val manifest = try {
+                org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+            } finally {
+                conn.disconnect()
+            }
+
+            val newVersionCode = manifest.optLong("versionCode", 0)
+            val json = org.json.JSONObject().apply {
+                put("status", if (newVersionCode > currentVersionCode) "update_available" else "up_to_date")
+                put("currentVersion", currentVersionName)
+                put("currentVersionCode", currentVersionCode)
+                put("newVersion", manifest.optString("versionName", "?"))
+                put("newVersionCode", newVersionCode)
+                put("downloadUrl", manifest.optString("url", ""))
+                put("releaseNotes", manifest.optString("releaseNotes", ""))
+            }
+            newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
+                .also { it.addHeader("Access-Control-Allow-Origin", "*") }
+        } catch (e: Exception) {
+            Log.e(tag, "Update check failed", e)
+            newFixedLengthResponse(Response.Status.OK, "application/json",
+                org.json.JSONObject().apply {
+                    put("status", "error")
+                    put("message", e.message ?: "Check failed")
+                }.toString())
+        }
+    }
+
+    /**
+     * POST /api/update/download  { "url": "https://..." }
+     * Starts a background thread that downloads the APK. Returns immediately.
+     * Poll /api/update/status to track progress.
+     */
+    private fun handleUpdateDownload(session: IHTTPSession): Response {
+        if (updateDownloadState == UpdateDownloadState.DOWNLOADING) {
+            return newFixedLengthResponse(Response.Status.OK, "application/json",
+                """{"status":"already_downloading"}""")
+        }
+        return try {
+            val files = HashMap<String, String>()
+            session.parseBody(files)
+            val body = files["postData"] ?: ""
+            val downloadUrl = if (body.isNotBlank()) org.json.JSONObject(body).optString("url", "") else ""
+
+            if (downloadUrl.isBlank()) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing download URL")
+            }
+
+            updateDownloadState = UpdateDownloadState.DOWNLOADING
+            updateDownloadError = null
+
+            Thread {
+                try {
+                    updatesDir.mkdirs()
+                    val conn = URL(downloadUrl).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 30_000
+                    conn.readTimeout  = 120_000
+                    try {
+                        conn.inputStream.use { input ->
+                            FileOutputStream(pendingApkFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        updateDownloadState = UpdateDownloadState.READY
+                        Log.i(tag, "APK downloaded to ${pendingApkFile.absolutePath}")
+                    } finally {
+                        conn.disconnect()
+                    }
+                } catch (e: Exception) {
+                    Log.e(tag, "APK download failed", e)
+                    updateDownloadState = UpdateDownloadState.ERROR
+                    updateDownloadError = e.message
+                }
+            }.start()
+
+            newFixedLengthResponse(Response.Status.OK, "application/json", """{"status":"downloading"}""")
+                .also { it.addHeader("Access-Control-Allow-Origin", "*") }
+        } catch (e: Exception) {
+            updateDownloadState = UpdateDownloadState.IDLE
+            Log.e(tag, "Failed to start update download", e)
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Failed to start download: ${e.message}")
+        }
+    }
+
+    /**
+     * GET /api/update/status
+     * Returns the current OTA download state: idle | downloading | ready | error
+     */
+    private fun handleUpdateStatus(): Response {
+        val json = org.json.JSONObject().apply {
+            when (updateDownloadState) {
+                UpdateDownloadState.IDLE        -> put("status", "idle")
+                UpdateDownloadState.DOWNLOADING -> put("status", "downloading")
+                UpdateDownloadState.READY       -> put("status", "ready")
+                UpdateDownloadState.ERROR       -> {
+                    put("status", "error")
+                    put("message", updateDownloadError ?: "Unknown error")
+                }
+            }
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
+            .also { it.addHeader("Access-Control-Allow-Origin", "*") }
+    }
+
+    /**
+     * POST /api/update/install
+     * Passes the downloaded APK to the Android package installer via FileProvider.
+     * The system will show an install confirmation dialog on the tablet screen.
+     */
+    private fun handleUpdateInstall(): Response {
+        if (!pendingApkFile.exists()) {
+            return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT,
+                "No APK downloaded yet. Call /api/update/download first.")
+        }
+        return try {
+            val apkUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                pendingApkFile
+            )
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            context.startActivity(installIntent)
+            updateDownloadState = UpdateDownloadState.IDLE  // reset for next update
+            Log.i(tag, "Install intent fired for ${pendingApkFile.name}")
+            newFixedLengthResponse(Response.Status.OK, "application/json", """{"status":"installing"}""")
+                .also { it.addHeader("Access-Control-Allow-Origin", "*") }
+        } catch (e: Exception) {
+            Log.e(tag, "APK install trigger failed", e)
+            newFixedLengthResponse(Response.Status.OK, "application/json",
+                org.json.JSONObject().apply {
+                    put("status", "error")
+                    put("message", e.message ?: "Install failed")
+                }.toString())
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+
     private fun handleDelete(session: IHTTPSession): Response {
         // NanoHTTPD parses body to parms if it is a standard form POST or query params
         val files = HashMap<String, String>()
@@ -404,7 +667,8 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
         if (targetSize > 0) {
             val cacheDir = if (targetSize <= 250) thumbCacheDir else slideshowCacheDir
             val cachedFile = File(cacheDir, sanitizedName)
-            if (cachedFile.exists() && cachedFile.isFile) {
+            // Use cached thumbnail only if it is at least as new as the source file
+            if (cachedFile.exists() && cachedFile.isFile && cachedFile.lastModified() >= file.lastModified()) {
                 return newChunkedResponse(Response.Status.OK, mimeType, FileInputStream(cachedFile))
             }
 

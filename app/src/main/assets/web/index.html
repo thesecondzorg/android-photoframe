@@ -86,16 +86,16 @@
 
         /* Ken Burns Animations */
         .kb-zoom-in {
-            animation: kb-zoom-in-anim 12s ease-out forwards;
+            animation: kb-zoom-in-anim 10s ease-out forwards;
         }
         .kb-zoom-out {
-            animation: kb-zoom-out-anim 12s ease-out forwards;
+            animation: kb-zoom-out-anim 10s ease-out forwards;
         }
         .kb-pan-right {
-            animation: kb-pan-right-anim 12s ease-out forwards;
+            animation: kb-pan-right-anim 10s ease-out forwards;
         }
         .kb-pan-left {
-            animation: kb-pan-left-anim 12s ease-out forwards;
+            animation: kb-pan-left-anim 10s ease-out forwards;
         }
 
         @keyframes kb-zoom-in-anim {
@@ -518,6 +518,16 @@
                 font-size: 0.75rem !important;
             }
         }
+        /* Screen Dim Overlay */
+        #dimOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: #000000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.5s ease;
+        }
     </style>
 </head>
 <body>
@@ -533,6 +543,9 @@
             <div class="slide-fg"></div>
         </div>
     </div>
+
+    <!-- Full-screen dim overlay (applied during scheduled night window) -->
+    <div id="dimOverlay"></div>
 
     <!-- Clock Overlay -->
     <div class="overlay clock-widget" id="clockWidget">
@@ -602,9 +615,9 @@
         let activeSlideId = 'slide1';
         let slideshowInterval = null;
         let isWelcomeVisible = false;
+        let currentSlideDuration = 10000; // Default 10 s; overridden by settings
 
-        const SLIDE_DURATION = 10000; // 10 seconds per photo
-        const POLL_INTERVAL = 3000;   // Poll for new photos every 3 seconds for near-instant reaction
+        const POLL_INTERVAL = 15000;  // Poll for new photos every 15 seconds
 
         // DOM elements
         const slide1 = document.getElementById('slide1');
@@ -627,7 +640,7 @@
             const options = { weekday: 'long', month: 'short', day: 'numeric' };
             dateDisplay.textContent = now.toLocaleDateString('en-US', options);
         }
-        setInterval(updateClock, 1000);
+        setInterval(updateClock, 10000); // Every 10 s is imperceptible on a clock showing HH:MM
         updateClock();
 
         // 2. Fetch IP and Server Info
@@ -722,7 +735,7 @@
         // 4. Slideshow Logic
         function startSlideshow() {
             stopSlideshow();
-            slideshowInterval = setInterval(nextSlide, SLIDE_DURATION);
+            slideshowInterval = setInterval(nextSlide, currentSlideDuration);
         }
 
         function stopSlideshow() {
@@ -744,7 +757,7 @@
         function changeSlide(photo) {
             const nextSlideId = activeSlideId === 'slide1' ? 'slide2' : 'slide1';
             const currentSlide = document.getElementById(activeSlideId);
-            const nextSlide = document.getElementById(nextSlideId);
+            const nextSlideEl = document.getElementById(nextSlideId); // renamed to avoid shadowing nextSlide()
 
             const imageUrl = `/photos/${encodeURIComponent(photo.name)}?size=slideshow`;
             
@@ -753,7 +766,7 @@
             img.src = imageUrl;
             img.onerror = () => {
                 console.error(`Failed to load slideshow image: ${imageUrl}. Skipping to next photo.`);
-                setTimeout(nextSlide, 2000);
+                setTimeout(nextSlide, 2000); // nextSlide() is the function, not the DOM element
             };
             img.onload = async () => {
                 const photoRatio = img.naturalWidth / img.naturalHeight;
@@ -763,19 +776,19 @@
                 const matchesScreen = (screenRatio > 1 && photoRatio > 1) || (screenRatio <= 1 && photoRatio <= 1);
                 
                 // Clean up old classes from next slide
-                nextSlide.className = 'slide';
+                nextSlideEl.className = 'slide';
                 if (matchesScreen) {
-                    nextSlide.classList.add('fill-mode');
+                    nextSlideEl.classList.add('fill-mode');
                 } else {
-                    nextSlide.classList.add('fit-mode');
+                    nextSlideEl.classList.add('fit-mode');
                 }
                 
                 // Store photo aspect ratio for dynamic resize support
-                nextSlide.dataset.photoRatio = photoRatio;
+                nextSlideEl.dataset.photoRatio = photoRatio;
                 
                 // Set image sources on background and foreground layers
-                const blurBg = nextSlide.querySelector('.slide-blur-bg');
-                const fg = nextSlide.querySelector('.slide-fg');
+                const blurBg = nextSlideEl.querySelector('.slide-blur-bg');
+                const fg = nextSlideEl.querySelector('.slide-fg');
                 
                 blurBg.style.backgroundImage = `url('${imageUrl}')`;
                 fg.style.backgroundImage = `url('${imageUrl}')`;
@@ -817,23 +830,26 @@
                     infoWidget.style.opacity = '0';
                 }
                 
-                // Select random Ken Burns animation class
+                // Select random Ken Burns animation class and match its duration to the slide interval
                 const randomEffect = kbEffects[Math.floor(Math.random() * kbEffects.length)];
-                
+                nextSlideEl.style.animationDuration = (currentSlideDuration / 1000) + 's';
+
                 // Transition slides after layout is set
                 setTimeout(() => {
-                    nextSlide.classList.add('active', randomEffect);
+                    nextSlideEl.classList.add('active', randomEffect);
                     currentSlide.classList.remove('active');
                     activeSlideId = nextSlideId;
                 }, 50);
             };
         }
 
-        // Start initialization
+        // Start initialization — fetch settings first so currentSlideDuration is set
+        // before the slideshow potentially starts
         fetchServerInfo();
-        loadPhotos();
-        // Polling loop
-        setInterval(loadPhotos, POLL_INTERVAL);
+        fetchSettings().then(() => {
+            loadPhotos();
+            setInterval(loadPhotos, POLL_INTERVAL);
+        });
 
         // 5. QR Code Helpers
         let welcomeQrGenerated = false;
@@ -901,6 +917,7 @@
         });
 
         // 6. GPS Reverse Geocoding via OpenStreetMap Nominatim
+        const MAX_LOCATION_CACHE = 200;
         const locationCache = {};
 
         async function resolvePlaceName(locationStr) {
@@ -942,6 +959,10 @@
                         } else {
                             placeName = city || country || locationStr;
                         }
+                        // Evict oldest entry when cache is full
+                        if (Object.keys(locationCache).length >= MAX_LOCATION_CACHE) {
+                            delete locationCache[Object.keys(locationCache)[0]];
+                        }
                         locationCache[cacheKey] = placeName;
                         return placeName;
                     }
@@ -976,6 +997,70 @@
                 }
             });
         });
+
+        // 8. Screen Dim Schedule
+        const dimOverlay = document.getElementById('dimOverlay');
+        let cachedSettings = null;
+        let settingsFetchedAt = 0;
+        const SETTINGS_TTL = 60000; // re-fetch settings every 60 seconds
+
+        async function fetchSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    cachedSettings = await res.json();
+                    settingsFetchedAt = Date.now();
+                    // Apply configurable slide duration
+                    if (cachedSettings.slideDuration) {
+                        const newDuration = Math.max(3, cachedSettings.slideDuration) * 1000;
+                        if (newDuration !== currentSlideDuration) {
+                            currentSlideDuration = newDuration;
+                            // Restart slideshow with updated interval if it's running
+                            if (slideshowInterval) startSlideshow();
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not fetch dim settings', e);
+            }
+        }
+
+        function isInDimWindow(settings) {
+            if (!settings || !settings.dimEnabled) return false;
+            const now = new Date();
+            const current = now.getHours() * 60 + now.getMinutes();
+
+            const parseTime = (t) => {
+                const [h, m] = (t || '00:00').split(':').map(Number);
+                return h * 60 + m;
+            };
+
+            const from = parseTime(settings.dimFrom);
+            const to   = parseTime(settings.dimTo);
+
+            if (from <= to) {
+                // Same-day range (e.g. 08:00 → 18:00)
+                return current >= from && current < to;
+            } else {
+                // Overnight range (e.g. 22:00 → 07:00)
+                return current >= from || current < to;
+            }
+        }
+
+        async function checkDimSchedule() {
+            if (!cachedSettings || Date.now() - settingsFetchedAt > SETTINGS_TTL) {
+                await fetchSettings();
+            }
+            if (isInDimWindow(cachedSettings)) {
+                dimOverlay.style.opacity = String(cachedSettings.dimLevel ?? 0.9);
+            } else {
+                dimOverlay.style.opacity = '0';
+            }
+        }
+
+        // Check immediately and every 30 seconds
+        checkDimSchedule();
+        setInterval(checkDimSchedule, 30000);
         
         console.log(`Window initialized with size: ${window.innerWidth}x${window.innerHeight}, ratio: ${window.innerWidth / window.innerHeight}`);
     </script>

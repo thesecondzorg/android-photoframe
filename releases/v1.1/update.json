@@ -1,0 +1,6 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1",
+  "url": "https://github.com/thesecondzorg/android-photoframe/releases/download/v1.1/photoframe-v1.1.apk",
+  "releaseNotes": "- Fixed slideshow stalling when a photo fails to load\n- Added night/dim schedule: set a time window and brightness from the admin page\n- Added configurable slide duration (seconds per photo)\n- Added OTA updates: future updates can be installed directly from the admin page\n- Fixed screen locking after extended idle time (foreground service + keyguard bypass)\n- Performance: faster app start (thumbnail cache no longer wiped on boot)\n- Performance: metadata cache saves on a background thread\n- Security: 50 MB upload size limit, validated settings fields, safe JSON building"
+}

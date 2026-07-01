@@ -342,6 +342,212 @@
 
         .toast.success { border-left: 4px solid #10b981; }
         .toast.error { border-left: 4px solid var(--danger); }
+
+        /* ── Display Schedule Card ─────────────────────── */
+        .settings-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 36px 40px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+
+        .settings-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .settings-title svg {
+            color: var(--primary);
+        }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .settings-row:last-of-type {
+            border-bottom: none;
+        }
+
+        .settings-label {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .settings-hint {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.1);
+            border-radius: 26px;
+            cursor: pointer;
+            transition: background 0.25s ease;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .toggle-switch input:checked + .toggle-track {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .toggle-track::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            background: #ffffff;
+            border-radius: 50%;
+            transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch input:checked + .toggle-track::after {
+            transform: translateX(22px);
+        }
+
+        /* Time Pickers */
+        .time-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .time-input {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            padding: 8px 14px;
+            width: 120px;
+            transition: border-color 0.2s ease;
+            outline: none;
+            color-scheme: dark;
+        }
+
+        .time-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+
+        .time-sep {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        /* Brightness Slider */
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .dim-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 180px;
+            height: 6px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            outline: none;
+            cursor: pointer;
+        }
+
+        .dim-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--primary);
+            box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+            transition: transform 0.15s ease;
+        }
+
+        .dim-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        .slider-value {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text);
+            min-width: 36px;
+            text-align: right;
+        }
+
+        /* Dimming controls (time pickers + slider) hidden when toggle is off */
+        .dim-options {
+            overflow: hidden;
+            max-height: 300px;
+            transition: max-height 0.35s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        .dim-options.hidden {
+            max-height: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .settings-save-btn {
+            margin-top: 24px;
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            padding: 12px 30px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-save-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -390,6 +596,130 @@
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" id="progressBarFill"></div>
                 </div>
+            </div>
+        </section>
+
+        <!-- Display Schedule Settings -->
+        <section class="settings-card">
+            <h2 class="settings-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 8v4l2.5 2.5"/>
+                </svg>
+                Display Schedule
+            </h2>
+
+            <!-- Enable Dimming Toggle -->
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Enable Night Dimming</div>
+                    <div class="settings-hint">Overlay a dark screen during the set time window</div>
+                </div>
+                <label class="toggle-switch" id="dimToggleLabel">
+                    <input type="checkbox" id="dimEnabled">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <!-- Collapsible dim options -->
+            <div class="dim-options hidden" id="dimOptions">
+                <!-- Time Window -->
+                <div class="settings-row">
+                    <div>
+                        <div class="settings-label">Dim Time Window</div>
+                        <div class="settings-hint">Overnight ranges (e.g. 22:00 → 07:00) are supported</div>
+                    </div>
+                    <div class="time-group">
+                        <input type="time" id="dimFrom" class="time-input" value="22:00">
+                        <span class="time-sep">to</span>
+                        <input type="time" id="dimTo" class="time-input" value="07:00">
+                    </div>
+                </div>
+
+                <!-- Brightness Slider -->
+                <div class="settings-row">
+                    <div>
+                        <div class="settings-label">Dim Brightness</div>
+                        <div class="settings-hint">How dark the screen becomes during the window</div>
+                    </div>
+                    <div class="slider-group">
+                        <input type="range" id="dimLevel" class="dim-slider" min="10" max="98" value="90">
+                        <span class="slider-value" id="dimLevelValue">10%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seconds per photo (always visible) -->
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Seconds per Photo</div>
+                    <div class="settings-hint">How long each photo is displayed in the slideshow (3–300 s)</div>
+                </div>
+                <div class="slider-group">
+                    <input type="range" id="slideDuration" class="dim-slider" min="3" max="120" value="10">
+                    <span class="slider-value" id="slideDurationValue">10 s</span>
+                </div>
+            </div>
+
+            <button class="settings-save-btn" id="saveSettingsBtn" onclick="saveSettings()" disabled style="opacity:0.5;cursor:not-allowed;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Save Settings
+            </button>
+        </section>
+
+        <!-- OTA Updates -->
+        <section class="settings-card" id="updateCard">
+            <div class="settings-card-header">
+                <div class="settings-card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="settings-card-title">OTA Updates</h3>
+                    <p class="settings-card-desc">Update the app wirelessly without a USB cable</p>
+                </div>
+            </div>
+
+            <!-- Update Manifest URL -->
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Update Manifest URL</div>
+                    <div class="settings-hint">URL to a JSON file with versionCode, versionName, url, releaseNotes fields</div>
+                </div>
+                <input type="url" id="updateUrl" class="time-input" style="width:260px;font-size:0.8rem;"
+                       placeholder="https://example.com/update.json">
+            </div>
+
+            <!-- Check button + status -->
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <button class="settings-save-btn" id="checkUpdatesBtn" onclick="checkForUpdates()" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Check for Updates
+                </button>
+                <span id="currentVersionBadge" style="font-size:0.78rem;color:rgba(255,255,255,0.45);"></span>
+            </div>
+
+            <!-- Result area (hidden until first check) -->
+            <div id="updateResultArea" style="display:none;margin-top:12px;padding:14px;border-radius:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);">
+                <div id="updateResultBadge" style="margin-bottom:8px;"></div>
+                <div id="updateReleaseNotes" style="font-size:0.82rem;color:rgba(255,255,255,0.6);white-space:pre-wrap;display:none;"></div>
+                <button class="settings-save-btn" id="installUpdateBtn"
+                        style="display:none;margin-top:12px;background:linear-gradient(135deg,#10b981,#059669);"
+                        onclick="startInstallUpdate()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download &amp; Install
+                </button>
             </div>
         </section>
 
@@ -632,6 +962,201 @@
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
+
+        // ── Display Schedule Settings ──────────────────────────────────────
+        const dimEnabledEl     = document.getElementById('dimEnabled');
+        const dimOptionsEl     = document.getElementById('dimOptions');
+        const dimFromEl        = document.getElementById('dimFrom');
+        const dimToEl          = document.getElementById('dimTo');
+        const dimLevelEl       = document.getElementById('dimLevel');
+        const dimLevelVal      = document.getElementById('dimLevelValue');
+        const slideDurationEl  = document.getElementById('slideDuration');
+        const slideDurationVal = document.getElementById('slideDurationValue');
+        const saveBtn          = document.getElementById('saveSettingsBtn');
+
+        // Brightness slider: overlay opacity % → display brightness %
+        function updateSliderLabel() {
+            const brightness = 100 - parseInt(dimLevelEl.value, 10);
+            dimLevelVal.textContent = brightness + '%';
+        }
+        dimLevelEl.addEventListener('input', updateSliderLabel);
+
+        // Slide duration slider
+        function updateSlideDurationLabel() {
+            slideDurationVal.textContent = slideDurationEl.value + ' s';
+        }
+        slideDurationEl.addEventListener('input', updateSlideDurationLabel);
+
+        // Show/hide time + brightness controls
+        dimEnabledEl.addEventListener('change', () => {
+            if (dimEnabledEl.checked) {
+                dimOptionsEl.classList.remove('hidden');
+            } else {
+                dimOptionsEl.classList.add('hidden');
+            }
+        });
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                if (!res.ok) return;
+                const s = await res.json();
+                dimEnabledEl.checked   = !!s.dimEnabled;
+                dimFromEl.value        = s.dimFrom  || '22:00';
+                dimToEl.value          = s.dimTo    || '07:00';
+                // s.dimLevel is overlay opacity (0–1); slider expects %
+                dimLevelEl.value       = Math.round((s.dimLevel ?? 0.9) * 100);
+                slideDurationEl.value  = Math.min(120, Math.max(3, s.slideDuration ?? 10));
+                updateSliderLabel();
+                updateSlideDurationLabel();
+                if (dimEnabledEl.checked) dimOptionsEl.classList.remove('hidden');
+                // OTA update URL
+                const updateUrlEl = document.getElementById('updateUrl');
+                if (updateUrlEl) updateUrlEl.value = s.updateUrl || '';
+            } catch (e) {
+                console.error('Failed to load settings', e);
+            } finally {
+                // Enable save button once we know the current values (even on error)
+                saveBtn.disabled = false;
+                saveBtn.style.opacity = '';
+                saveBtn.style.cursor = '';
+            }
+        }
+
+        async function saveSettings() {
+            const overlayOpacity = parseInt(dimLevelEl.value, 10) / 100;
+            const payload = {
+                dimEnabled    : dimEnabledEl.checked,
+                dimFrom       : dimFromEl.value,
+                dimTo         : dimToEl.value,
+                dimLevel      : parseFloat(overlayOpacity.toFixed(2)),
+                slideDuration : parseInt(slideDurationEl.value, 10),
+                updateUrl     : (document.getElementById('updateUrl')?.value || '').trim()
+            };
+            try {
+                const res = await fetch('/api/settings', {
+                    method  : 'POST',
+                    headers : { 'Content-Type': 'application/json' },
+                    body    : JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    showToast('Display schedule saved!', 'success');
+                } else {
+                    throw new Error(await res.text());
+                }
+            } catch (e) {
+                showToast('Failed to save settings: ' + e.message, 'error');
+            }
+        }
+
+        loadSettings();
+        // ── OTA Updates ──────────────────────────────────────────────────
+        let latestUpdateInfo = null;
+
+        async function checkForUpdates() {
+            const btn = document.getElementById('checkUpdatesBtn');
+            const badge = document.getElementById('currentVersionBadge');
+            btn.disabled = true;
+            btn.innerHTML = btn.innerHTML.replace('Check for Updates', 'Checking…');
+            try {
+                const res  = await fetch('/api/update/check');
+                const data = await res.json();
+                latestUpdateInfo = data;
+                badge.textContent = `Installed: v${data.currentVersion || '?'}`;
+                renderUpdateResult(data);
+            } catch (e) {
+                showToast('Could not reach update server: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = btn.innerHTML.replace('Checking…', 'Check for Updates');
+            }
+        }
+
+        function renderUpdateResult(data) {
+            const area   = document.getElementById('updateResultArea');
+            const badge  = document.getElementById('updateResultBadge');
+            const notes  = document.getElementById('updateReleaseNotes');
+            const btn    = document.getElementById('installUpdateBtn');
+            area.style.display = 'block';
+
+            const styles = {
+                up_to_date     : 'color:#10b981;',
+                update_available: 'color:#f59e0b;font-weight:600;',
+                not_configured : 'color:rgba(255,255,255,0.4);',
+                error          : 'color:#f87171;'
+            };
+            const style = styles[data.status] || '';
+
+            const labels = {
+                up_to_date     : `✓ Up to date (v${data.currentVersion})`,
+                update_available: `↑ v${data.newVersion} available`,
+                not_configured : '⚠️ No update URL configured — enter one above and save settings first.',
+                error          : `✗ ${data.message}`
+            };
+            badge.innerHTML = `<span style="${style}font-size:0.9rem;">${labels[data.status] || data.status}</span>`;
+
+            if (data.releaseNotes) {
+                notes.textContent = data.releaseNotes;
+                notes.style.display = 'block';
+            } else {
+                notes.style.display = 'none';
+            }
+
+            btn.style.display = data.status === 'update_available' ? 'inline-flex' : 'none';
+        }
+
+        async function startInstallUpdate() {
+            if (!latestUpdateInfo?.downloadUrl) return;
+            const btn = document.getElementById('installUpdateBtn');
+            btn.disabled = true;
+            btn.innerHTML = btn.innerHTML.replace('Download &amp; Install', 'Downloading…');
+
+            try {
+                const res  = await fetch('/api/update/download', {
+                    method : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body   : JSON.stringify({ url: latestUpdateInfo.downloadUrl })
+                });
+                const data = await res.json();
+                if (data.status === 'downloading' || data.status === 'already_downloading') {
+                    pollInstallStatus(btn);
+                } else {
+                    throw new Error(data.message || 'Download failed to start');
+                }
+            } catch (e) {
+                btn.disabled = false;
+                btn.innerHTML = btn.innerHTML.replace('Downloading…', 'Download &amp; Install');
+                showToast('Download error: ' + e.message, 'error');
+            }
+        }
+
+        function pollInstallStatus(btn) {
+            const interval = setInterval(async () => {
+                try {
+                    const res  = await fetch('/api/update/status');
+                    const data = await res.json();
+                    if (data.status === 'ready') {
+                        clearInterval(interval);
+                        btn.innerHTML = btn.innerHTML.replace('Downloading…', 'Installing…');
+                        await fetch('/api/update/install', { method: 'POST' });
+                        showToast('Installation started! Accept the prompt on the tablet.', 'success');
+                        btn.disabled = false;
+                        btn.innerHTML = btn.innerHTML.replace('Installing…', 'Download &amp; Install');
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        btn.disabled = false;
+                        btn.innerHTML = btn.innerHTML.replace('Downloading…', 'Download &amp; Install');
+                        showToast('Download failed: ' + data.message, 'error');
+                    }
+                    // 'downloading' — keep polling
+                } catch (e) {
+                    clearInterval(interval);
+                    btn.disabled = false;
+                    btn.innerHTML = btn.innerHTML.replace('Downloading…', 'Download &amp; Install');
+                }
+            }, 2000);
+        }
+
     </script>
 </body>
 </html>
