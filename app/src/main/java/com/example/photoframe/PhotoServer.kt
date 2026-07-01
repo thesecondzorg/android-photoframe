@@ -415,7 +415,9 @@ class PhotoServer(private val context: Context, port: Int) : NanoHTTPD(port) {
             put("dimTo", "07:00")
             put("dimLevel", 0.9)
             put("slideDuration", 10)
-            put("updateUrl", "")   // URL of the update manifest JSON
+            // Stable URL — always points to the latest release manifest.
+            // Update releases/latest/update.json in the repo when releasing a new version.
+            put("updateUrl", "https://raw.githubusercontent.com/thesecondzorg/android-photoframe/main/releases/latest/update.json")
         }.toString()
     }
 

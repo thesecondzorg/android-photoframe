@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.1 (versionCode 3) — 2026-07-01
+
+### UX Fixes
+- OTA Updates card now has its own **Save URL** button — no need to scroll to a different section to save before checking for updates
+- Update manifest URL is pre-configured out of the box (`releases/latest/update.json` on GitHub) — no manual setup required on fresh installs
+
+---
+
 ## v1.1 (versionCode 2) — 2026-07-01
 
 ### New Features
